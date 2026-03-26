@@ -88,7 +88,7 @@ pip install streamlit pandas numpy plotly
 
 3. **Run the application**:
    ```bash
-   streamlit run d2.py
+   streamlit run demo 2.py
    ```
 
 4. **Open your browser** and go to the URL shown (typically `http://localhost:8501`)
@@ -112,7 +112,7 @@ pip install streamlit pandas numpy plotly
 
 ```
 finzen/
-├── d2.py                 # Main Streamlit application
+├── demo 2.py                 # Main Streamlit application
 ├── finzen.db            # Database file (if used)
 ├── README.md            # This file
 └── __pycache__/         # Python cache files
