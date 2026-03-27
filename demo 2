@@ -527,7 +527,7 @@ LANG_STRINGS = {
         "monthly_invest": "Monthly invest",
         "based_on_history": "Based on history",
         "rec_title": "💡 Personalized Recommendations",
-        "voice_btn": "🎙️ Hold to Speak",
+        "voice_btn": "🎙️ Click to Speak",
         "voice_listening": "🔴 Listening… speak now!",
         "voice_processing": "⏳ Processing your voice…",
         "voice_done": "✅ Captured",
@@ -545,6 +545,9 @@ LANG_STRINGS = {
         "goal_name_placeholder": "e.g. Europe Trip",
         "goal_name_err": "Please enter a goal name.",
         "goal_added": "added!",
+        "auto_speak": "🔊 Auto-Speak Responses",
+        "speak_now": "🔊 Speak",
+        "stop_speak": "⏹ Stop",
     },
     "hi": {
         "dashboard": "📊 वित्तीय डैशबोर्ड",
@@ -576,7 +579,7 @@ LANG_STRINGS = {
         "monthly_invest": "मासिक निवेश",
         "based_on_history": "इतिहास के आधार पर",
         "rec_title": "💡 व्यक्तिगत सिफारिशें",
-        "voice_btn": "🎙️ बोलने के लिए दबाएं",
+        "voice_btn": "🎙️ बोलने के लिए क्लिक करें",
         "voice_listening": "🔴 सुन रहा है… अभी बोलें!",
         "voice_processing": "⏳ प्रोसेस हो रहा है…",
         "voice_done": "✅ कैप्चर किया",
@@ -594,6 +597,9 @@ LANG_STRINGS = {
         "goal_name_placeholder": "जैसे यूरोप यात्रा",
         "goal_name_err": "कृपया लक्ष्य का नाम दर्ज करें।",
         "goal_added": "जोड़ा गया!",
+        "auto_speak": "🔊 उत्तर स्वतः बोलें",
+        "speak_now": "🔊 बोलें",
+        "stop_speak": "⏹ रोकें",
     },
     "mr": {
         "dashboard": "📊 आर्थिक डॅशबोर्ड",
@@ -625,7 +631,7 @@ LANG_STRINGS = {
         "monthly_invest": "मासिक गुंतवणूक",
         "based_on_history": "इतिहासावर आधारित",
         "rec_title": "💡 वैयक्तिक शिफारसी",
-        "voice_btn": "🎙️ बोलण्यासाठी दाबा",
+        "voice_btn": "🎙️ बोलण्यासाठी क्लिक करा",
         "voice_listening": "🔴 ऐकत आहे… आता बोला!",
         "voice_processing": "⏳ प्रक्रिया होत आहे…",
         "voice_done": "✅ कॅप्चर केले",
@@ -643,11 +649,13 @@ LANG_STRINGS = {
         "goal_name_placeholder": "उदा. युरोप ट्रिप",
         "goal_name_err": "कृपया ध्येयाचे नाव प्रविष्ट करा.",
         "goal_added": "जोडले!",
+        "auto_speak": "🔊 उत्तर स्वतः बोला",
+        "speak_now": "🔊 बोला",
+        "stop_speak": "⏹ थांबा",
     },
 }
 
 def T(key):
-    """Translate a key using current language."""
     lang = st.session_state.get("lang", "en")
     return LANG_STRINGS.get(lang, LANG_STRINGS["en"]).get(key, LANG_STRINGS["en"].get(key, key))
 
@@ -803,112 +811,337 @@ def recommendations(udf):
                      "amount":"Target: "+fmt(inc*.15)+"/month"})
     return recs[:5]
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  MULTILINGUAL CHAT RESPONSE ENGINE
+#  chat_response() returns text in the user's selected language (en / hi / mr)
+# ══════════════════════════════════════════════════════════════════════════════
+
 def chat_response(uid, msg, lang="en"):
     udf  = get_user_df(uid)
     msg  = msg.lower().strip()
-    name = USERS[uid]["name"].split()[0]
+    name_full = USERS[uid]["name"].split()[0]
     inc  = float(udf["income"].mean())
     sav  = float(udf["savings"].mean())
     sr   = float(udf["savings_rate"].mean())
     exp  = float(udf["total_expense"].mean())
     pred = predictions(udf)
     hs   = health_score(udf)
-    recs = recommendations(udf)
+    rcs  = recommendations(udf)
     sip  = max(500, round(sav * 0.6 / 500) * 500)
     ef   = round(exp * 6)
-    if any(w in msg for w in ["hello","hi","hey","start","namaste","नमस्ते","नमस्कार"]):
-        r = (f"Hi {name}! 👋 I'm FinZen AI.\n\n"
-             f"Your Health Score: **{hs['score']}/100** — {hs['grade']}\n"
-             f"Top priority: {recs[0]['icon']} {recs[0]['title']}\n\n"
-             f"Ask me about savings, SIP, budget, emergency fund, or predictions!")
-    elif any(w in msg for w in ["score","health","grade","स्कोर","स्कोअर"]):
+
+    # ── Localised name labels ──
+    name = {
+        "en": name_full,
+        "hi": name_full,
+        "mr": name_full,
+    }[lang]
+
+    # ── keyword sets per language ──
+    KW = {
+        "greet":   {"en":["hello","hi","hey","start","namaste"],
+                    "hi":["नमस्ते","नमस्कार","हेलो","शुरू"],
+                    "mr":["नमस्कार","हेलो","सुरू"]},
+        "score":   {"en":["score","health","grade"],
+                    "hi":["स्कोर","स्वास्थ्य","ग्रेड"],
+                    "mr":["स्कोर","आरोग्य","ग्रेड"]},
+        "saving":  {"en":["saving","save"],
+                    "hi":["बचत","बचाव"],
+                    "mr":["बचत","बचवा"]},
+        "sip":     {"en":["sip","invest","mutual fund","mf"],
+                    "hi":["sip","निवेश","म्यूचुअल फंड"],
+                    "mr":["sip","गुंतवणूक","म्युच्युअल फंड"]},
+        "emergency":{"en":["emergency","fund"],
+                     "hi":["आपातकाल","आपातकालीन","निधि"],
+                     "mr":["आपत्काल","आपत्कालीन","निधी"]},
+        "budget":  {"en":["budget","overspend","spend","expense"],
+                    "hi":["बजट","खर्च","ज़्यादा"],
+                    "mr":["बजेट","खर्च","जास्त"]},
+        "predict": {"en":["predict","forecast","next","future"],
+                    "hi":["भविष्य","अनुमान","अगले","पूर्वानुमान"],
+                    "mr":["भविष्य","अंदाज","पुढे","अनुमान"]},
+        "risk":    {"en":["risk"],
+                    "hi":["जोखिम","जोखम"],
+                    "mr":["जोखीम","धोका"]},
+        "recommend":{"en":["recommend","advice","tip","suggestion"],
+                     "hi":["सुझाव","सलाह","टिप्स"],
+                     "mr":["शिफारस","सल्ला","टिप्स"]},
+        "travel":  {"en":["vacation","trip","travel","holiday"],
+                    "hi":["छुट्टी","यात्रा","ट्रिप","सफर"],
+                    "mr":["सुट्टी","प्रवास","ट्रिप"]},
+        "food":    {"en":["food","dining"],
+                    "hi":["खाना","भोजन","खानपान"],
+                    "mr":["जेवण","खाणे","अन्न"]},
+    }
+
+    def match(topic):
+        words = KW[topic].get(lang, []) + KW[topic].get("en", [])
+        return any(w in msg for w in words)
+
+    # ── Response builders per language ──
+
+    if match("greet"):
+        if lang == "hi":
+            r = (f"नमस्ते {name}! 👋 मैं FinZen AI हूं, आपका वित्तीय सलाहकार।\n\n"
+                 f"आपका स्वास्थ्य स्कोर: **{hs['score']}/100** — {hs['grade']}\n"
+                 f"सबसे ज़रूरी काम: {rcs[0]['icon']} {rcs[0]['title']}\n\n"
+                 f"बचत, SIP, बजट, या भविष्यवाणी के बारे में पूछें!")
+        elif lang == "mr":
+            r = (f"नमस्कार {name}! 👋 मी FinZen AI आहे, तुमचा आर्थिक सल्लागार।\n\n"
+                 f"तुमचा आरोग्य स्कोर: **{hs['score']}/100** — {hs['grade']}\n"
+                 f"सर्वात महत्त्वाचे: {rcs[0]['icon']} {rcs[0]['title']}\n\n"
+                 f"बचत, SIP, बजेट किंवा अंदाजाबद्दल विचारा!")
+        else:
+            r = (f"Hi {name}! 👋 I'm FinZen AI, your personal financial advisor.\n\n"
+                 f"Your Health Score: **{hs['score']}/100** — {hs['grade']}\n"
+                 f"Top priority: {rcs[0]['icon']} {rcs[0]['title']}\n\n"
+                 f"Ask me about savings, SIP, budget, emergency fund, or predictions!")
+
+    elif match("score"):
         bd = hs["breakdown"]
-        r  = (f"**Financial Health Score: {hs['score']}/100 — {hs['grade']}**\n\n"
-              + "\n".join(f"• {b['label']}: {b['pts']}/{b['max']} pts" for b in bd)
-              + f"\n\n💡 Biggest boost: increase investments to 15% of income.")
-    elif any(w in msg for w in ["saving","save","बचत","बचाव","बचवा"]):
-        r = (f"📊 Avg monthly savings: **{fmt(sav)}** ({sr:.1f}% rate)\n"
-             f"🎯 Target: 20% savings rate\n"
-             f"📅 Next month prediction: **{fmt(pred['next_pred'])}**\n"
-             f"📈 Trend: {pred['direction']}\n\n"
-             f"💡 Tip: Auto-transfer savings on salary day before spending!")
-    elif any(w in msg for w in ["sip","invest","mutual fund","mf","निवेश","गुंतवणूक"]):
+        if lang == "hi":
+            r = (f"**वित्तीय स्वास्थ्य स्कोर: {hs['score']}/100 — {hs['grade']}**\n\n"
+                 + "\n".join(f"• {b['label']}: {b['pts']}/{b['max']} अंक" for b in bd)
+                 + f"\n\n💡 सबसे बड़ा सुधार: आय का 15% निवेश में लगाएं।")
+        elif lang == "mr":
+            r = (f"**आर्थिक आरोग्य स्कोर: {hs['score']}/100 — {hs['grade']}**\n\n"
+                 + "\n".join(f"• {b['label']}: {b['pts']}/{b['max']} गुण" for b in bd)
+                 + f"\n\n💡 सर्वात मोठी सुधारणा: उत्पन्नाच्या 15% गुंतवणूक करा.")
+        else:
+            r = (f"**Financial Health Score: {hs['score']}/100 — {hs['grade']}**\n\n"
+                 + "\n".join(f"• {b['label']}: {b['pts']}/{b['max']} pts" for b in bd)
+                 + f"\n\n💡 Biggest boost: increase investments to 15% of income.")
+
+    elif match("saving"):
+        if lang == "hi":
+            r = (f"📊 औसत मासिक बचत: **{fmt(sav)}** ({sr:.1f}% दर)\n"
+                 f"🎯 लक्ष्य: 20% बचत दर\n"
+                 f"📅 अगले महीने का अनुमान: **{fmt(pred['next_pred'])}**\n"
+                 f"📈 रुझान: {pred['direction']}\n\n"
+                 f"💡 टिप: वेतन के दिन पहले बचत ऑटो-ट्रांसफर करें!")
+        elif lang == "mr":
+            r = (f"📊 सरासरी मासिक बचत: **{fmt(sav)}** ({sr:.1f}% दर)\n"
+                 f"🎯 लक्ष्य: 20% बचत दर\n"
+                 f"📅 पुढच्या महिन्याचा अंदाज: **{fmt(pred['next_pred'])}**\n"
+                 f"📈 कल: {pred['direction']}\n\n"
+                 f"💡 टिप: पगाराच्या दिवशी आधी बचत ऑटो-ट्रान्सफर करा!")
+        else:
+            r = (f"📊 Avg monthly savings: **{fmt(sav)}** ({sr:.1f}% rate)\n"
+                 f"🎯 Target: 20% savings rate\n"
+                 f"📅 Next month prediction: **{fmt(pred['next_pred'])}**\n"
+                 f"📈 Trend: {pred['direction']}\n\n"
+                 f"💡 Tip: Auto-transfer savings on salary day before spending!")
+
+    elif match("sip"):
         sip1 = round(sip * 12 * ((1.12**1 - 1) / 0.12))
         sip3 = round(sip * 12 * ((1.12**3 - 1) / 0.12))
         sip5 = round(sip * 12 * ((1.12**5 - 1) / 0.12))
-        r = (f"**Recommended SIP: {fmt(sip)}/month** at 12% CAGR:\n\n"
-             f"• 1 Year  → {fmt(sip1)}\n"
-             f"• 3 Years → {fmt(sip3)}\n"
-             f"• 5 Years → {fmt(sip5)}\n\n"
-             f"💡 Start with Parag Parikh Flexi Cap or Nifty 50 Index Fund on Groww/Zerodha Coin!")
-    elif any(w in msg for w in ["emergency","fund","आपातकाल","आपत्काल"]):
-        r = (f"**Emergency Fund Target: {fmt(ef)}** (6 months of expenses)\n\n"
-             f"• Save {fmt(round(ef/12))}/month\n"
-             f"• Reach target in 12 months\n"
-             f"• Park in Liquid MF (better than savings account)\n\n"
-             f"💡 Automate transfer on the 1st of every month!")
-    elif any(w in msg for w in ["budget","overspend","spend","expense","खर्च"]):
+        if lang == "hi":
+            r = (f"**अनुशंसित SIP: {fmt(sip)}/महीना** (12% CAGR पर):\n\n"
+                 f"• 1 साल  → {fmt(sip1)}\n"
+                 f"• 3 साल → {fmt(sip3)}\n"
+                 f"• 5 साल → {fmt(sip5)}\n\n"
+                 f"💡 Parag Parikh Flexi Cap या Nifty 50 Index Fund से शुरुआत करें!")
+        elif lang == "mr":
+            r = (f"**शिफारस केलेला SIP: {fmt(sip)}/महिना** (12% CAGR वर):\n\n"
+                 f"• 1 वर्ष  → {fmt(sip1)}\n"
+                 f"• 3 वर्षे → {fmt(sip3)}\n"
+                 f"• 5 वर्षे → {fmt(sip5)}\n\n"
+                 f"💡 Parag Parikh Flexi Cap किंवा Nifty 50 Index Fund मधून सुरुवात करा!")
+        else:
+            r = (f"**Recommended SIP: {fmt(sip)}/month** at 12% CAGR:\n\n"
+                 f"• 1 Year  → {fmt(sip1)}\n"
+                 f"• 3 Years → {fmt(sip3)}\n"
+                 f"• 5 Years → {fmt(sip5)}\n\n"
+                 f"💡 Start with Parag Parikh Flexi Cap or Nifty 50 Index Fund!")
+
+    elif match("emergency"):
+        if lang == "hi":
+            r = (f"**आपातकालीन निधि लक्ष्य: {fmt(ef)}** (6 महीने के खर्च)\n\n"
+                 f"• {fmt(round(ef/12))}/महीना बचाएं\n"
+                 f"• 12 महीने में लक्ष्य पूरा करें\n"
+                 f"• लिक्विड MF में रखें (बचत खाते से बेहतर)\n\n"
+                 f"💡 हर महीने की 1 तारीख को ट्रांसफर ऑटोमेट करें!")
+        elif lang == "mr":
+            r = (f"**आपत्कालीन निधी लक्ष्य: {fmt(ef)}** (6 महिन्यांचा खर्च)\n\n"
+                 f"• {fmt(round(ef/12))}/महिना बचवा\n"
+                 f"• 12 महिन्यांत लक्ष्य पूर्ण करा\n"
+                 f"• लिक्विड MF मध्ये ठेवा (बचत खात्यापेक्षा चांगले)\n\n"
+                 f"💡 दर महिन्याच्या 1 तारखेला ट्रान्सफर ऑटोमेट करा!")
+        else:
+            r = (f"**Emergency Fund Target: {fmt(ef)}** (6 months of expenses)\n\n"
+                 f"• Save {fmt(round(ef/12))}/month\n"
+                 f"• Reach target in 12 months\n"
+                 f"• Park in Liquid MF (better than savings account)\n\n"
+                 f"💡 Automate transfer on the 1st of every month!")
+
+    elif match("budget"):
         high = [(c, float(udf[c].mean())) for c in EXPENSE_COLS
                 if float(udf[c].mean()) / inc * 100 > IDEAL_PCT[c]]
         if high:
             top  = sorted(high, key=lambda x: -x[1])[:3]
-            body = "\n".join(f"• {c.title()}: {fmt(v)} ({v/inc*100:.1f}% vs ideal {IDEAL_PCT[c]}%)" for c,v in top)
-            r = (f"⚠️ Overspending detected:\n\n{body}\n\n"
-                 f"**50-30-20 Rule:**\n"
-                 f"• Needs (50%): {fmt(inc*.5)}\n"
-                 f"• Wants (30%): {fmt(inc*.3)}\n"
-                 f"• Savings (20%): {fmt(inc*.2)}")
+            if lang == "hi":
+                body = "\n".join(f"• {c.title()}: {fmt(v)} ({v/inc*100:.1f}% — आदर्श {IDEAL_PCT[c]}%)" for c,v in top)
+                r = (f"⚠️ अधिक खर्च मिला:\n\n{body}\n\n"
+                     f"**50-30-20 नियम:**\n"
+                     f"• ज़रूरत (50%): {fmt(inc*.5)}\n"
+                     f"• इच्छाएं (30%): {fmt(inc*.3)}\n"
+                     f"• बचत (20%): {fmt(inc*.2)}")
+            elif lang == "mr":
+                body = "\n".join(f"• {c.title()}: {fmt(v)} ({v/inc*100:.1f}% — आदर्श {IDEAL_PCT[c]}%)" for c,v in top)
+                r = (f"⚠️ जास्त खर्च आढळला:\n\n{body}\n\n"
+                     f"**50-30-20 नियम:**\n"
+                     f"• गरज (50%): {fmt(inc*.5)}\n"
+                     f"• इच्छा (30%): {fmt(inc*.3)}\n"
+                     f"• बचत (20%): {fmt(inc*.2)}")
+            else:
+                body = "\n".join(f"• {c.title()}: {fmt(v)} ({v/inc*100:.1f}% vs ideal {IDEAL_PCT[c]}%)" for c,v in top)
+                r = (f"⚠️ Overspending detected:\n\n{body}\n\n"
+                     f"**50-30-20 Rule:**\n"
+                     f"• Needs (50%): {fmt(inc*.5)}\n"
+                     f"• Wants (30%): {fmt(inc*.3)}\n"
+                     f"• Savings (20%): {fmt(inc*.2)}")
         else:
-            r = f"✅ Great job {name}! Spending is well-controlled in all categories!"
-    elif any(w in msg for w in ["predict","forecast","next","future","भविष्य","अंदाज"]):
-        r = (f"**Savings Predictions for {name}:**\n\n"
-             f"📅 Next month: {fmt(pred['next_pred'])}\n"
-             f"📊 Trend: {pred['direction']} ({pred['slope']:+.0f}/month)\n"
-             f"🗓️ 3-Year cumulative: {fmt(pred['f3y'])}\n"
-             f"🚀 5-Year cumulative: {fmt(pred['f5y'])}\n"
-             f"⚡ Risk level: {pred['risk']} (CV: {pred['cv']})")
-    elif any(w in msg for w in ["risk","जोखिम","जोखीम"]):
-        r = (f"**Financial Risk: {pred['risk']}**\n\n"
-             f"• Savings volatility CV: {pred['cv']}\n"
-             f"• Savings rate: {sr:.1f}%\n"
-             f"• Investment rate: {float(udf['investment'].mean())/inc*100:.1f}%\n\n"
-             f"💡 Reduce risk: emergency fund + auto-invest + equity/debt/gold diversification")
-    elif any(w in msg for w in ["recommend","advice","tip","suggestion","सुझाव","शिफारस"]):
-        r = "**Top Recommendations:**\n\n" + "\n".join(
-            f"{rc['icon']} **{rc['title']}** [{rc['priority']}]\n   → {rc['amount']}" for rc in recs[:3])
-    elif any(w in msg for w in ["vacation","trip","travel","holiday","छुट्टी","सुट्टी"]):
+            if lang == "hi":
+                r = f"✅ शाबाश {name}! सभी श्रेणियों में खर्च नियंत्रित है!"
+            elif lang == "mr":
+                r = f"✅ शाब्बास {name}! सर्व श्रेणींमध्ये खर्च नियंत्रित आहे!"
+            else:
+                r = f"✅ Great job {name}! Spending is well-controlled in all categories!"
+
+    elif match("predict"):
+        if lang == "hi":
+            r = (f"**{name} के लिए बचत पूर्वानुमान:**\n\n"
+                 f"📅 अगला महीना: {fmt(pred['next_pred'])}\n"
+                 f"📊 रुझान: {pred['direction']} ({pred['slope']:+.0f}/माह)\n"
+                 f"🗓️ 3 साल संचयी: {fmt(pred['f3y'])}\n"
+                 f"🚀 5 साल संचयी: {fmt(pred['f5y'])}\n"
+                 f"⚡ जोखिम स्तर: {pred['risk']} (CV: {pred['cv']})")
+        elif lang == "mr":
+            r = (f"**{name} साठी बचत अंदाज:**\n\n"
+                 f"📅 पुढचा महिना: {fmt(pred['next_pred'])}\n"
+                 f"📊 कल: {pred['direction']} ({pred['slope']:+.0f}/महिना)\n"
+                 f"🗓️ 3 वर्षे एकत्रित: {fmt(pred['f3y'])}\n"
+                 f"🚀 5 वर्षे एकत्रित: {fmt(pred['f5y'])}\n"
+                 f"⚡ जोखीम पातळी: {pred['risk']} (CV: {pred['cv']})")
+        else:
+            r = (f"**Savings Predictions for {name}:**\n\n"
+                 f"📅 Next month: {fmt(pred['next_pred'])}\n"
+                 f"📊 Trend: {pred['direction']} ({pred['slope']:+.0f}/month)\n"
+                 f"🗓️ 3-Year cumulative: {fmt(pred['f3y'])}\n"
+                 f"🚀 5-Year cumulative: {fmt(pred['f5y'])}\n"
+                 f"⚡ Risk level: {pred['risk']} (CV: {pred['cv']})")
+
+    elif match("risk"):
+        if lang == "hi":
+            r = (f"**वित्तीय जोखिम: {pred['risk']}**\n\n"
+                 f"• बचत अस्थिरता CV: {pred['cv']}\n"
+                 f"• बचत दर: {sr:.1f}%\n"
+                 f"• निवेश दर: {float(udf['investment'].mean())/inc*100:.1f}%\n\n"
+                 f"💡 जोखिम कम करें: आपातकालीन निधि + ऑटो-निवेश + इक्विटी/डेट/गोल्ड विविधीकरण")
+        elif lang == "mr":
+            r = (f"**आर्थिक जोखीम: {pred['risk']}**\n\n"
+                 f"• बचत अस्थिरता CV: {pred['cv']}\n"
+                 f"• बचत दर: {sr:.1f}%\n"
+                 f"• गुंतवणूक दर: {float(udf['investment'].mean())/inc*100:.1f}%\n\n"
+                 f"💡 जोखीम कमी करा: आपत्कालीन निधी + ऑटो-गुंतवणूक + इक्विटी/डेट/गोल्ड वैविध्य")
+        else:
+            r = (f"**Financial Risk: {pred['risk']}**\n\n"
+                 f"• Savings volatility CV: {pred['cv']}\n"
+                 f"• Savings rate: {sr:.1f}%\n"
+                 f"• Investment rate: {float(udf['investment'].mean())/inc*100:.1f}%\n\n"
+                 f"💡 Reduce risk: emergency fund + auto-invest + equity/debt/gold diversification")
+
+    elif match("recommend"):
+        if lang == "hi":
+            r = "**शीर्ष सिफारिशें:**\n\n" + "\n".join(
+                f"{rc['icon']} **{rc['title']}** [{rc['priority']}]\n   → {rc['amount']}" for rc in rcs[:3])
+        elif lang == "mr":
+            r = "**शीर्ष शिफारसी:**\n\n" + "\n".join(
+                f"{rc['icon']} **{rc['title']}** [{rc['priority']}]\n   → {rc['amount']}" for rc in rcs[:3])
+        else:
+            r = "**Top Recommendations:**\n\n" + "\n".join(
+                f"{rc['icon']} **{rc['title']}** [{rc['priority']}]\n   → {rc['amount']}" for rc in rcs[:3])
+
+    elif match("travel"):
         months_needed = round(50000 / (sav * 0.3)) if sav > 0 else 12
-        r = (f"✈️ **Travel Planning for {name}:**\n\n"
-             f"• Domestic trip: ₹30K–₹60K\n"
-             f"• International: ₹1.5L–₹3L\n\n"
-             f"Save {fmt(sav * 0.3)}/month → ₹50K trip in {months_needed} months!\n"
-             f"💡 Open a dedicated 'Travel' recurring deposit.")
-    elif any(w in msg for w in ["food","खाना","जेवण","dining"]):
+        if lang == "hi":
+            r = (f"✈️ **{name} के लिए यात्रा योजना:**\n\n"
+                 f"• घरेलू यात्रा: ₹30K–₹60K\n"
+                 f"• अंतर्राष्ट्रीय: ₹1.5L–₹3L\n\n"
+                 f"{fmt(sav * 0.3)}/महीना बचाएं → {months_needed} महीने में ₹50K यात्रा!\n"
+                 f"💡 एक अलग 'यात्रा' आवर्ती जमा खोलें।")
+        elif lang == "mr":
+            r = (f"✈️ **{name} साठी प्रवास नियोजन:**\n\n"
+                 f"• देशांतर्गत प्रवास: ₹30K–₹60K\n"
+                 f"• आंतरराष्ट्रीय: ₹1.5L–₹3L\n\n"
+                 f"{fmt(sav * 0.3)}/महिना बचवा → {months_needed} महिन्यांत ₹50K प्रवास!\n"
+                 f"💡 एक वेगळी 'प्रवास' आवर्ती ठेव उघडा.")
+        else:
+            r = (f"✈️ **Travel Planning for {name}:**\n\n"
+                 f"• Domestic trip: ₹30K–₹60K\n"
+                 f"• International: ₹1.5L–₹3L\n\n"
+                 f"Save {fmt(sav * 0.3)}/month → ₹50K trip in {months_needed} months!\n"
+                 f"💡 Open a dedicated 'Travel' recurring deposit.")
+
+    elif match("food"):
         avg_food = float(udf["food"].mean())
         fpct     = avg_food / inc * 100
-        r = (f"🍱 Food spending: **{fmt(avg_food)}/month** ({fpct:.1f}% of income)\n"
-             f"Ideal: 15% = {fmt(inc * 0.15)}\n\n"
-             f"💡 Tips:\n• Meal prep on Sundays (saves ₹2K+/month)\n"
-             f"• Zomato/Swiggy max 2×/week\n"
-             f"• Cook at home → save {fmt(max(0, avg_food - inc*0.15))}/month!")
+        if lang == "hi":
+            r = (f"🍱 खाने पर खर्च: **{fmt(avg_food)}/महीना** ({fpct:.1f}% आय का)\n"
+                 f"आदर्श: 15% = {fmt(inc * 0.15)}\n\n"
+                 f"💡 सुझाव:\n• रविवार को खाना तैयार करें (₹2K+/महीना बचत)\n"
+                 f"• Zomato/Swiggy सप्ताह में अधिकतम 2 बार\n"
+                 f"• घर पर खाना बनाएं → {fmt(max(0, avg_food - inc*0.15))}/महीना बचाएं!")
+        elif lang == "mr":
+            r = (f"🍱 जेवणावर खर्च: **{fmt(avg_food)}/महिना** ({fpct:.1f}% उत्पन्नाचा)\n"
+                 f"आदर्श: 15% = {fmt(inc * 0.15)}\n\n"
+                 f"💡 टिप्स:\n• रविवारी जेवण तयार करा (₹2K+/महिना बचत)\n"
+                 f"• Zomato/Swiggy आठवड्यातून जास्तीत जास्त 2 वेळा\n"
+                 f"• घरी स्वयंपाक करा → {fmt(max(0, avg_food - inc*0.15))}/महिना बचवा!")
+        else:
+            r = (f"🍱 Food spending: **{fmt(avg_food)}/month** ({fpct:.1f}% of income)\n"
+                 f"Ideal: 15% = {fmt(inc * 0.15)}\n\n"
+                 f"💡 Tips:\n• Meal prep on Sundays (saves ₹2K+/month)\n"
+                 f"• Zomato/Swiggy max 2×/week\n"
+                 f"• Cook at home → save {fmt(max(0, avg_food - inc*0.15))}/month!")
+
     else:
-        r = (f"Hi {name}! 🧠 Quick snapshot:\n\n"
-             f"• Income: {fmt(inc)}/month\n"
-             f"• Savings: {fmt(sav)}/month ({sr:.1f}%)\n"
-             f"• Health Score: {hs['score']}/100 — {hs['grade']}\n\n"
-             f"Try asking: **'my SIP plan'** · **'budget advice'** · "
-             f"**'predict savings'** · **'emergency fund'** · **'am I overspending?'**")
+        # Default / fallback
+        if lang == "hi":
+            r = (f"नमस्ते {name}! 🧠 त्वरित सारांश:\n\n"
+                 f"• आय: {fmt(inc)}/महीना\n"
+                 f"• बचत: {fmt(sav)}/महीना ({sr:.1f}%)\n"
+                 f"• स्वास्थ्य स्कोर: {hs['score']}/100 — {hs['grade']}\n\n"
+                 f"पूछें: **'मेरी बचत'** · **'SIP सुझाव'** · **'भविष्यवाणी'** · **'आपातकालीन निधि'** · **'बजट सलाह'**")
+        elif lang == "mr":
+            r = (f"नमस्कार {name}! 🧠 त्वरित सारांश:\n\n"
+                 f"• उत्पन्न: {fmt(inc)}/महिना\n"
+                 f"• बचत: {fmt(sav)}/महिना ({sr:.1f}%)\n"
+                 f"• आरोग्य स्कोर: {hs['score']}/100 — {hs['grade']}\n\n"
+                 f"विचारा: **'माझी बचत'** · **'SIP सुचवा'** · **'अंदाज'** · **'आपत्कालीन निधी'** · **'बजेट सल्ला'**")
+        else:
+            r = (f"Hi {name}! 🧠 Quick snapshot:\n\n"
+                 f"• Income: {fmt(inc)}/month\n"
+                 f"• Savings: {fmt(sav)}/month ({sr:.1f}%)\n"
+                 f"• Health Score: {hs['score']}/100 — {hs['grade']}\n\n"
+                 f"Try asking: **'my SIP plan'** · **'budget advice'** · "
+                 f"**'predict savings'** · **'emergency fund'** · **'am I overspending?'**")
+
     return r
 
 
 #  SESSION STATE
 
-if "uid"       not in st.session_state: st.session_state.uid       = None
-if "is_admin"  not in st.session_state: st.session_state.is_admin  = False
-if "chat"      not in st.session_state: st.session_state.chat      = []
-if "lang"      not in st.session_state: st.session_state.lang      = "en"
-if "voice_text" not in st.session_state: st.session_state.voice_text = ""
-if "goals"     not in st.session_state: st.session_state.goals     = [
+if "uid"         not in st.session_state: st.session_state.uid         = None
+if "is_admin"    not in st.session_state: st.session_state.is_admin    = False
+if "chat"        not in st.session_state: st.session_state.chat        = []
+if "lang"        not in st.session_state: st.session_state.lang        = "en"
+if "voice_text"  not in st.session_state: st.session_state.voice_text  = ""
+if "auto_speak"  not in st.session_state: st.session_state.auto_speak  = True
+if "last_spoken" not in st.session_state: st.session_state.last_spoken = ""
+if "goals"       not in st.session_state: st.session_state.goals       = [
     {"icon":"🏖️","name":"Europe Trip",       "target":150000, "saved":42000,  "months":8},
     {"icon":"🏠","name":"Home Down Payment", "target":1000000,"saved":180000, "months":36},
     {"icon":"💻","name":"MacBook Pro",       "target":200000, "saved":65000,  "months":6},
@@ -916,54 +1149,122 @@ if "goals"     not in st.session_state: st.session_state.goals     = [
 ]
 
 
-# ── VOICE COMMAND (Chrome Web Speech API via JS Component) ──
+# ══════════════════════════════════════════════════════════════════════════════
+#  TTS AUTO-SPEAK COMPONENT
+#  Injects a hidden iframe that auto-plays the latest AI response via
+#  the browser's SpeechSynthesis API. Fires once per new response.
+# ══════════════════════════════════════════════════════════════════════════════
 
-def render_tts_button(text, lang_code="en"):
-    """Render a text-to-speech button using browser's Speech Synthesis API."""
+def render_auto_speak(text: str, lang_code: str):
+    """Auto-speak the given text using the browser's Speech Synthesis API."""
     lang_map = {"en": "en-IN", "hi": "hi-IN", "mr": "mr-IN"}
     speech_lang = lang_map.get(lang_code, "en-IN")
 
-    # Clean and escape the text for JavaScript
-    clean_text = text.replace('"', '').replace("'", "").replace("\n", " ").strip()
-    # Escape for JavaScript string
-    js_text = clean_text.replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
+    # Strip markdown formatting for cleaner speech
+    import re
+    clean = re.sub(r'\*+', '', text)       # remove bold/italic markers
+    clean = re.sub(r'#{1,6} ', '', clean)  # remove heading markers
+    clean = re.sub(r'→', 'to', clean)
+    clean = re.sub(r'₹', 'rupees ', clean)
+    clean = re.sub(r'\n+', '. ', clean)
+    clean = clean.replace('"', '').replace("'", "").strip()
+    # Escape for JS
+    clean = clean.replace('\\', '\\\\').replace('`', '\\`')
 
-    tts_html = f"""
-    <button onclick="speakText('{js_text}', '{speech_lang}')"
-        style="display:inline-flex;align-items:center;gap:4px;margin-left:8px;
-               padding:4px 8px;border-radius:6px;border:1px solid #e2e6f0;
-               background:#ffffff;color:#2563eb;font-size:11px;font-weight:600;
-               cursor:pointer;transition:all .2s;"
-        onmouseover="this.style.background='#f0f4ff';this.style.borderColor='#2563eb';"
-        onmouseout="this.style.background='#ffffff';this.style.borderColor='#e2e6f0';">
-        🔊 Speak
-    </button>
-
+    html = f"""
     <script>
-    function speakText(text, lang) {{
-        if (!('speechSynthesis' in window)) {{
-            alert('Text-to-speech is not supported in your browser.');
-            return;
-        }}
-
-        // Stop any ongoing speech
+    (function() {{
+        var text = `{clean}`;
+        var lang = '{speech_lang}';
+        if (!('speechSynthesis' in window)) return;
         window.speechSynthesis.cancel();
+        var u = new SpeechSynthesisUtterance(text);
+        u.lang = lang;
+        u.rate = 0.92;
+        u.pitch = 1.0;
+        u.volume = 1.0;
+        // Small delay so page finishes rendering first
+        setTimeout(function() {{ window.speechSynthesis.speak(u); }}, 400);
+    }})();
+    </script>
+    """
+    st.components.v1.html(html, height=0)
 
-        var utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = lang;
-        utterance.rate = 0.9;
-        utterance.pitch = 1.0;
 
-        window.speechSynthesis.speak(utterance);
+def render_manual_speak_button(text: str, lang_code: str, key_suffix: str = ""):
+    """Render a small Speak / Stop button for each AI message."""
+    lang_map = {"en": "en-IN", "hi": "hi-IN", "mr": "mr-IN"}
+    speech_lang = lang_map.get(lang_code, "en-IN")
+
+    import re
+    clean = re.sub(r'\*+', '', text)
+    clean = re.sub(r'#{1,6} ', '', clean)
+    clean = re.sub(r'→', 'to', clean)
+    clean = re.sub(r'₹', 'rupees ', clean)
+    clean = re.sub(r'\n+', '. ', clean)
+    clean = clean.replace('"', '').replace("'", "").strip()
+    clean = clean.replace('\\', '\\\\').replace('`', '\\`')
+
+    btn_id = f"speakBtn_{key_suffix}"
+    speak_lbl = T("speak_now")
+    stop_lbl  = T("stop_speak")
+
+    html = f"""
+    <button id="{btn_id}"
+        onclick="toggleSpeak_{key_suffix}(this)"
+        style="display:inline-flex;align-items:center;gap:4px;
+               padding:4px 10px;border-radius:6px;border:1px solid #bfdbfe;
+               background:#eff6ff;color:#2563eb;font-size:11px;font-weight:700;
+               cursor:pointer;transition:all .2s;margin-left:6px;">
+        🔊 {speak_lbl}
+    </button>
+    <script>
+    var _speaking_{key_suffix} = false;
+    var _utt_{key_suffix} = null;
+    function toggleSpeak_{key_suffix}(btn) {{
+        if (_speaking_{key_suffix}) {{
+            window.speechSynthesis.cancel();
+            _speaking_{key_suffix} = false;
+            btn.innerHTML = '🔊 {speak_lbl}';
+            btn.style.background = '#eff6ff';
+            btn.style.borderColor = '#bfdbfe';
+            btn.style.color = '#2563eb';
+        }} else {{
+            if (!('speechSynthesis' in window)) {{
+                alert('Text-to-speech not supported in your browser.');
+                return;
+            }}
+            window.speechSynthesis.cancel();
+            _utt_{key_suffix} = new SpeechSynthesisUtterance(`{clean}`);
+            _utt_{key_suffix}.lang = '{speech_lang}';
+            _utt_{key_suffix}.rate = 0.92;
+            _utt_{key_suffix}.pitch = 1.0;
+            _utt_{key_suffix}.onend = function() {{
+                _speaking_{key_suffix} = false;
+                btn.innerHTML = '🔊 {speak_lbl}';
+                btn.style.background = '#eff6ff';
+                btn.style.borderColor = '#bfdbfe';
+                btn.style.color = '#2563eb';
+            }};
+            window.speechSynthesis.speak(_utt_{key_suffix});
+            _speaking_{key_suffix} = true;
+            btn.innerHTML = '⏹ {stop_lbl}';
+            btn.style.background = '#fef2f2';
+            btn.style.borderColor = '#fca5a5';
+            btn.style.color = '#dc2626';
+        }}
     }}
     </script>
     """
-    return tts_html
+    return html
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  VOICE INPUT COMPONENT  (speech → fills text box)
+# ══════════════════════════════════════════════════════════════════════════════
 
 def render_voice_button(lang_code="en"):
-    """Render a voice recording button using Chrome's Web Speech API."""
-    lang_map = {"en": "en-IN", "hi": "hi-IN", "mr": "mr-IN"}
+    lang_map    = {"en": "en-IN", "hi": "hi-IN", "mr": "mr-IN"}
     speech_lang = lang_map.get(lang_code, "en-IN")
     btn_label   = T("voice_btn")
 
@@ -980,12 +1281,10 @@ def render_voice_button(lang_code="en"):
         </button>
         <div id="voiceStatus" style="display:none;margin-top:10px;padding:10px 14px;
              border-radius:10px;background:#fef2f2;border:1px solid #fca5a5;
-             font-size:13px;color:#991b1b;font-weight:600;">
-        </div>
+             font-size:13px;color:#991b1b;font-weight:600;"></div>
         <div id="voiceResult" style="display:none;margin-top:8px;padding:10px 14px;
              border-radius:10px;background:#f0fdf4;border:1px solid #86efac;
-             font-size:13px;color:#166534;font-weight:600;">
-        </div>
+             font-size:13px;color:#166534;font-weight:600;"></div>
     </div>
 
     <script>
@@ -998,16 +1297,12 @@ def render_voice_button(lang_code="en"):
             document.getElementById('voiceStatus').innerText = '{T("voice_not_supported")}';
             return;
         }}
-        if (isListening) {{
-            stopVoice();
-        }} else {{
-            startVoice();
-        }}
+        isListening ? stopVoice() : startVoice();
     }}
 
     function startVoice() {{
-        var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        recognition = new SpeechRecognition();
+        var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        recognition = new SR();
         recognition.lang = '{speech_lang}';
         recognition.continuous = false;
         recognition.interimResults = false;
@@ -1017,9 +1312,8 @@ def render_voice_button(lang_code="en"):
             isListening = true;
             var btn = document.getElementById('voiceBtn');
             btn.style.background = 'linear-gradient(135deg,#ef4444,#f97316)';
-            btn.style.animation = 'pulse 1.5s ease-in-out infinite';
             document.getElementById('voiceIcon').innerText = '🔴';
-            document.getElementById('voiceBtnText').innerText = '{T("voice_listening").replace("'","\\'")}';
+            document.getElementById('voiceBtnText').innerText = '{T("voice_listening")}';
             document.getElementById('voiceStatus').style.display = 'block';
             document.getElementById('voiceStatus').innerText = '{T("voice_listening")}';
             document.getElementById('voiceResult').style.display = 'none';
@@ -1031,41 +1325,31 @@ def render_voice_button(lang_code="en"):
             document.getElementById('voiceResult').style.display = 'block';
             document.getElementById('voiceResult').innerText = '{T("voice_done")}: ' + transcript;
 
-            // Send to Streamlit via URL param approach
-            var input = window.parent.document.querySelector('input[data-testid="stTextInput"] input, input[aria-label="msg"]');
-            if (!input) {{
-                // Find by placeholder
-                var inputs = window.parent.document.querySelectorAll('input[type="text"]');
-                for (var i = 0; i < inputs.length; i++) {{
-                    if (inputs[i].placeholder && inputs[i].placeholder.includes('Ask') || 
-                        inputs[i].placeholder.includes('पूछ') || inputs[i].placeholder.includes('विचार')) {{
-                        input = inputs[i];
-                        break;
-                    }}
+            // Fill Streamlit text input
+            var inputs = window.parent.document.querySelectorAll('input[type="text"]');
+            for (var i = 0; i < inputs.length; i++) {{
+                var ph = inputs[i].placeholder || '';
+                if (ph.includes('Ask') || ph.includes('पूछ') || ph.includes('विचार') || ph.includes('finances')) {{
+                    var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                    setter.call(inputs[i], transcript);
+                    inputs[i].dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    break;
                 }}
-            }}
-            if (input) {{
-                var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                nativeInputValueSetter.call(input, transcript);
-                input.dispatchEvent(new Event('input', {{ bubbles: true }}));
             }}
             resetBtn();
         }};
 
-        recognition.onerror = function(event) {{
+        recognition.onerror = function() {{
             document.getElementById('voiceStatus').innerText = '{T("voice_error")}';
             resetBtn();
         }};
 
-        recognition.onend = function() {{
-            if (isListening) {{ resetBtn(); }}
-        }};
-
+        recognition.onend = function() {{ if (isListening) resetBtn(); }};
         recognition.start();
     }}
 
     function stopVoice() {{
-        if (recognition) {{ recognition.stop(); }}
+        if (recognition) recognition.stop();
         resetBtn();
     }}
 
@@ -1073,7 +1357,6 @@ def render_voice_button(lang_code="en"):
         isListening = false;
         var btn = document.getElementById('voiceBtn');
         btn.style.background = 'linear-gradient(135deg,#2563eb,#7c3aed)';
-        btn.style.animation = 'none';
         document.getElementById('voiceIcon').innerText = '🎙️';
         document.getElementById('voiceBtnText').innerText = '{btn_label}';
         setTimeout(function() {{
@@ -1088,7 +1371,7 @@ def render_voice_button(lang_code="en"):
     }}
     </style>
     """
-    st.components.v1.html(voice_html, height=130)
+    st.components.v1.html(voice_html, height=140)
 
 
 #  LOGIN PAGE
@@ -1144,7 +1427,6 @@ def page_login():
             <div class="admin-hint">
                 🔒 Admin access requires email, password <b>and</b> a secret access code.
             </div>""", unsafe_allow_html=True)
-
             adm_email = st.text_input("Admin Email",    placeholder="admin@finzen.ai",    key="adm_email")
             adm_pass  = st.text_input("Admin Password", type="password", placeholder="Admin password", key="adm_pass")
             adm_code  = st.text_input("Secret Access Code", type="password",
@@ -1193,12 +1475,11 @@ def page_admin():
     """, unsafe_allow_html=True)
     st.markdown('<div class="pg-sub">Complete overview of all users — FinZen AI Platform</div>', unsafe_allow_html=True)
 
-    total_users     = len(USERS)
-    total_income    = df_all.groupby("user_id")["income"].mean().sum()
-    total_savings   = df_all.groupby("user_id")["savings"].mean().sum()
-    avg_health      = round(
-        sum(health_score(get_user_df(uid))["score"] for uid in USERS) / total_users, 1)
-    avg_sr          = df_all["savings_rate"].mean()
+    total_users   = len(USERS)
+    total_income  = df_all.groupby("user_id")["income"].mean().sum()
+    total_savings = df_all.groupby("user_id")["savings"].mean().sum()
+    avg_health    = round(sum(health_score(get_user_df(uid))["score"] for uid in USERS) / total_users, 1)
+    avg_sr        = df_all["savings_rate"].mean()
 
     k1,k2,k3,k4,k5 = st.columns(5)
     k1.metric("Total Users",           total_users,           "Registered")
@@ -1208,32 +1489,30 @@ def page_admin():
     k5.metric("Data Points",           f"{len(df_all):,}",    "Transactions")
 
     st.divider()
-
     tab1, tab2, tab3 = st.tabs(["👥  All Users", "📊  Platform Analytics", "⚠️  Anomaly Alerts"])
 
     with tab1:
         st.markdown('<div class="fz-card-title">👥 Registered Users Overview</div>', unsafe_allow_html=True)
         rows = []
         for uid, u in USERS.items():
-            udf  = get_user_df(uid)
-            hs   = health_score(udf)
-            cs   = credit_score(udf)
-            pr   = predictions(udf)
+            udf = get_user_df(uid)
+            hs  = health_score(udf)
+            cs  = credit_score(udf)
+            pr  = predictions(udf)
             rows.append({
-                "User":          f"{u['emoji']} {u['name']}",
-                "Role":          u["role"],
-                "City":          u["city"],
-                "Avg Income":    fmt(float(udf["income"].mean())),
-                "Avg Savings":   fmt(float(udf["savings"].mean())),
-                "Savings Rate":  f"{float(udf['savings_rate'].mean()):.1f}%",
-                "Health Score":  f"{hs['score']}/100",
-                "Credit Score":  f"{cs['score']}/900",
-                "5Y Forecast":   fmt(pr["f5y"]),
-                "Risk":          pr["risk"],
-                "Grade":         hs["grade"],
+                "User":         f"{u['emoji']} {u['name']}",
+                "Role":         u["role"],
+                "City":         u["city"],
+                "Avg Income":   fmt(float(udf["income"].mean())),
+                "Avg Savings":  fmt(float(udf["savings"].mean())),
+                "Savings Rate": f"{float(udf['savings_rate'].mean()):.1f}%",
+                "Health Score": f"{hs['score']}/100",
+                "Credit Score": f"{cs['score']}/900",
+                "5Y Forecast":  fmt(pr["f5y"]),
+                "Risk":         pr["risk"],
+                "Grade":        hs["grade"],
             })
-        adm_df = pd.DataFrame(rows)
-        st.dataframe(adm_df, use_container_width=True, hide_index=True, height=500)
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True, height=500)
 
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown('<div class="fz-card-title">🔍 Individual User Deep-Dive</div>', unsafe_allow_html=True)
@@ -1246,13 +1525,11 @@ def page_admin():
             cs  = credit_score(udf)
             pr  = predictions(udf)
             u   = USERS[sel_uid]
-
             dc1,dc2,dc3,dc4 = st.columns(4)
             dc1.metric(f"{u['emoji']} {u['name'].split()[0]}", u["role"])
             dc2.metric("Health Score",  f"{hs['score']}/100  {hs['grade'].split()[0]}")
             dc3.metric("Credit Score",  f"{cs['score']}/900  {cs['grade'].split()[0]}")
             dc4.metric("5Y Forecast",   fmt(pr["f5y"]))
-
             months_lbl = [MONTHS[int(r.month)-1] for _, r in udf.iterrows()]
             fig = go.Figure()
             fig.add_bar(x=months_lbl, y=udf["income"].tolist(),
@@ -1271,26 +1548,22 @@ def page_admin():
         st.markdown('<div class="fz-card-title">📊 Platform-wide Analytics</div>', unsafe_allow_html=True)
         user_avgs = [(uid, float(get_user_df(uid)["income"].mean())) for uid in USERS]
         user_avgs.sort(key=lambda x: -x[1])
-        names  = [USERS[u[0]]["name"].split()[0] for u in user_avgs]
+        names   = [USERS[u[0]]["name"].split()[0] for u in user_avgs]
         incomes = [u[1] for u in user_avgs]
-
         col_a, col_b = st.columns(2)
         with col_a:
             fig_inc = go.Figure()
             fig_inc.add_bar(x=names, y=incomes, name="Income",
                             marker=dict(color=[f"hsl({200+i*7},70%,55%)" for i in range(len(names))],
                                         cornerradius=5))
-            fig_inc.update_layout(**PL, title="Monthly Income by User",
-                                  height=280, yaxis_tickprefix="₹")
+            fig_inc.update_layout(**PL, title="Monthly Income by User", height=280, yaxis_tickprefix="₹")
             st.plotly_chart(fig_inc, use_container_width=True)
-
         with col_b:
-            scores = [(uid, health_score(get_user_df(uid))["score"]) for uid in USERS]
-            sc_names  = [USERS[s[0]]["name"].split()[0] for s in scores]
-            sc_values = [s[1] for s in scores]
-            colors_sc = [C["green"] if v>=75 else C["blue"] if v>=55 else C["yellow"] if v>=35 else C["red"]
-                         for v in sc_values]
-            fig_hs = go.Figure(go.Bar(x=sc_names, y=sc_values,
+            scores   = [(uid, health_score(get_user_df(uid))["score"]) for uid in USERS]
+            sc_names = [USERS[s[0]]["name"].split()[0] for s in scores]
+            sc_vals  = [s[1] for s in scores]
+            colors_sc= [C["green"] if v>=75 else C["blue"] if v>=55 else C["yellow"] if v>=35 else C["red"] for v in sc_vals]
+            fig_hs = go.Figure(go.Bar(x=sc_names, y=sc_vals,
                                       marker=dict(color=colors_sc, cornerradius=5)))
             fig_hs.add_hline(y=75, line_dash="dot", line_color=C["green"], annotation_text="Excellent")
             fig_hs.add_hline(y=55, line_dash="dot", line_color=C["blue"],  annotation_text="Good")
@@ -1302,12 +1575,10 @@ def page_admin():
         sr_data  = [s[1] for s in sr_vals]
         fig_sr = go.Figure()
         fig_sr.add_bar(x=sr_names, y=sr_data,
-                       marker=dict(color=[C["green"] if v>=20 else C["yellow"] if v>=10 else C["red"]
-                                          for v in sr_data], cornerradius=5))
+                       marker=dict(color=[C["green"] if v>=20 else C["yellow"] if v>=10 else C["red"] for v in sr_data], cornerradius=5))
         fig_sr.add_hline(y=20, line_dash="dash", line_color=C["blue"],
                          annotation_text="20% Target", annotation_position="top right")
-        fig_sr.update_layout(**PL, title="Savings Rate Comparison (%)",
-                             height=240, yaxis_ticksuffix="%")
+        fig_sr.update_layout(**PL, title="Savings Rate Comparison (%)", height=240, yaxis_ticksuffix="%")
         st.plotly_chart(fig_sr, use_container_width=True)
 
         st.markdown('<div class="fz-card-title">🗺️ Expense % of Income — All Users</div>', unsafe_allow_html=True)
@@ -1315,8 +1586,7 @@ def page_admin():
         for uid in USERS:
             udf = get_user_df(uid)
             inc = float(udf["income"].mean())
-            row = [round(float(udf[c].mean())/inc*100, 1) for c in EXPENSE_COLS]
-            heat_data.append(row)
+            heat_data.append([round(float(udf[c].mean())/inc*100, 1) for c in EXPENSE_COLS])
         heat_df = pd.DataFrame(heat_data,
                                index=[USERS[u]["name"].split()[0] for u in USERS],
                                columns=[c.title() for c in EXPENSE_COLS])
@@ -1354,7 +1624,6 @@ def page_admin():
                 alerts.append({"user":name,"type":"🟠 High Volatility","detail":f"Savings CV: {cv:.2f} — highly inconsistent","severity":"warning"})
             if inv/inc*100 < 3:
                 alerts.append({"user":name,"type":"🔵 Under-Investing","detail":f"Investment only {inv/inc*100:.1f}% of income","severity":"info"})
-
         if alerts:
             sev_order = {"critical":0,"warning":1,"info":2}
             alerts.sort(key=lambda x: sev_order.get(x["severity"],3))
@@ -1536,7 +1805,6 @@ def page_dashboard():
         r2c3.metric(T("risk_profile"),   risk_p,   T("based_on_history"))
 
     st.divider()
-
     ch1, ch2 = st.columns(2)
     months_lbl = [MONTHS[int(r.month)-1] for _, r in udf.iterrows()]
 
@@ -1605,7 +1873,6 @@ def page_analysis():
     st.divider()
 
     months_lbl = [MONTHS[int(r.month)-1] for _, r in udf.iterrows()]
-
     fig = make_subplots(specs=[[{"secondary_y":True}]])
     fig.add_trace(go.Scatter(x=months_lbl, y=udf["savings"].tolist(), name="Savings ₹",
                              line=dict(color=C["blue"],width=2.5), mode="lines+markers",
@@ -1620,7 +1887,6 @@ def page_analysis():
     st.plotly_chart(fig, use_container_width=True)
 
     col_radar, col_tbl = st.columns([1, 2])
-
     with col_radar:
         st.markdown('<div class="fz-card-title">📡 Spending vs Ideal Benchmark</div>', unsafe_allow_html=True)
         cats    = [c.title() for c in EXPENSE_COLS]
@@ -1698,7 +1964,6 @@ def page_predictions():
 
     st.divider()
     col_next, col_risk = st.columns(2)
-
     with col_next:
         st.markdown('<div class="fz-card-title">📅 Next Month Prediction</div>', unsafe_allow_html=True)
         tdir_col = C["green"] if pred["slope"]>=0 else C["red"]
@@ -1739,24 +2004,23 @@ def page_predictions():
             <div style="font-family:'Syne',sans-serif;font-size:24px;font-weight:700;color:{rc};">
                 {emoji_r} {pred['risk']}
             </div>
-            <div style="font-size:12px;color:#6b7280;margin-top:4px;">
-                Volatility CV: {pred['cv']}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+            <div style="font-size:12px;color:#6b7280;margin-top:4px;">Volatility CV: {pred['cv']}</div>
+        </div>""", unsafe_allow_html=True)
 
+        udf2 = get_user_df(uid)
+        inc2 = float(udf2["income"].mean())
+        sr   = float(udf2["savings_rate"].mean())
         risk_factors = []
-        sr = float(udf["savings_rate"].mean())
-        if float(udf["entertainment"].mean())/inc*100 > 8:
-            risk_factors.append(("High Entertainment", f"{float(udf['entertainment'].mean())/inc*100:.1f}%", "medium"))
-        if float(udf["shopping"].mean())/inc*100 > 12:
-            risk_factors.append(("Excess Shopping", f"{float(udf['shopping'].mean())/inc*100:.1f}%", "medium"))
+        if float(udf2["entertainment"].mean())/inc2*100 > 8:
+            risk_factors.append(("High Entertainment", f"{float(udf2['entertainment'].mean())/inc2*100:.1f}%", "medium"))
+        if float(udf2["shopping"].mean())/inc2*100 > 12:
+            risk_factors.append(("Excess Shopping", f"{float(udf2['shopping'].mean())/inc2*100:.1f}%", "medium"))
         if pred["cv"] > 0.30:
             risk_factors.append(("Inconsistent Savings", f"CV:{pred['cv']}", "high"))
         if sr < 15:
             risk_factors.append(("Low Savings Rate", f"{sr:.1f}%", "high"))
-        if float(udf["investment"].mean())/inc*100 < 5:
-            risk_factors.append(("Under-Investing", f"{float(udf['investment'].mean())/inc*100:.1f}%", "medium"))
+        if float(udf2["investment"].mean())/inc2*100 < 5:
+            risk_factors.append(("Under-Investing", f"{float(udf2['investment'].mean())/inc2*100:.1f}%", "medium"))
 
         if risk_factors:
             for f, v, sev in risk_factors:
@@ -1780,8 +2044,8 @@ def page_predictions():
 #  PAGE 4 — GOALS
 
 def page_goals():
-    uid = st.session_state.uid
-    udf = get_user_df(uid)
+    uid     = st.session_state.uid
+    udf     = get_user_df(uid)
     avg_sav = float(udf["savings"].mean())
     goals   = st.session_state.goals
 
@@ -1862,7 +2126,6 @@ def page_whatif():
     st.markdown(f'<div class="pg-sub">{T("whatif_sub")}</div>', unsafe_allow_html=True)
 
     col_ctrl, col_res = st.columns([1, 2])
-
     with col_ctrl:
         st.markdown('<div class="fz-card-title">⚙️ Adjust Parameters</div>', unsafe_allow_html=True)
         target    = st.number_input("🎯 Goal Target Amount (₹)", min_value=10000, value=500000, step=10000)
@@ -1893,13 +2156,11 @@ def page_whatif():
         rc2.metric("New Savings",     fmt(new_sav),
                    delta=f"+{fmt(total_xtra)}/mo" if total_xtra>0 else None)
         rc3.metric("New Savings Rate",f"{new_sr:.1f}%")
-
         rc4,rc5,rc6 = st.columns(3)
         rc4.metric(f"Goal Now",      f"{base_months} mo")
         rc5.metric(f"Goal New Pace", f"{new_months} mo",
                    delta=f"-{round(base_months-new_months,1)} months" if new_months<base_months else None)
         rc6.metric("SIP Amount",     fmt(sip)+"/mo")
-
         st.markdown("---")
         st.markdown('<div class="fz-card-title">📈 SIP Growth at 12% CAGR</div>', unsafe_allow_html=True)
         sc1,sc2,sc3 = st.columns(3)
@@ -1909,7 +2170,6 @@ def page_whatif():
 
     st.divider()
     fc1, fc2 = st.columns(2)
-
     with fc1:
         lbl = [f"M{m}" for m in range(1,25)]
         fig = go.Figure()
@@ -1919,8 +2179,7 @@ def page_whatif():
         fig.add_scatter(x=lbl, y=[round(new_sav*m) for m in range(1,25)],
                         name="With Changes", line=dict(color=C["green"],width=2.5),
                         fill="tozeroy", fillcolor="rgba(16,185,129,.07)", mode="lines")
-        fig.update_layout(**PL, title="24-Month Savings Comparison",
-                          height=250, yaxis_tickprefix="₹")
+        fig.update_layout(**PL, title="24-Month Savings Comparison", height=250, yaxis_tickprefix="₹")
         st.plotly_chart(fig, use_container_width=True)
 
     with fc2:
@@ -1929,18 +2188,18 @@ def page_whatif():
         lbl60    = [f"M{i+1}" for i in range(60)]
         fig2 = go.Figure(go.Bar(
             x=lbl60, y=sip_vals,
-            marker=dict(color=[f"hsl({210+i*2},70%,55%)" for i in range(60)],
-                        cornerradius=3),
+            marker=dict(color=[f"hsl({210+i*2},70%,55%)" for i in range(60)], cornerradius=3),
         ))
         fig2.update_layout(**{k: v for k, v in PL.items() if k != 'xaxis'},
-                           title="5-Year SIP Wealth Growth",
-                           height=250, yaxis_tickprefix="₹",
+                           title="5-Year SIP Wealth Growth", height=250, yaxis_tickprefix="₹",
                            xaxis=dict(tickvals=list(range(0,60,12)),
                                       ticktext=["Yr 1","Yr 2","Yr 3","Yr 4","Yr 5"]))
         st.plotly_chart(fig2, use_container_width=True)
 
 
-#  PAGE 6 — AI CHAT ADVISOR
+# ══════════════════════════════════════════════════════════════════════════════
+#  PAGE 6 — AI CHAT ADVISOR  (fully multilingual input + output + voice TTS)
+# ══════════════════════════════════════════════════════════════════════════════
 
 def page_chat():
     uid  = st.session_state.uid
@@ -1949,14 +2208,26 @@ def page_chat():
     st.markdown(f'<div class="pg-title">{T("chat")}</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="pg-sub">{T("chat_sub")}</div>', unsafe_allow_html=True)
 
+    # ── Auto-speak toggle ──
+    col_tog, _ = st.columns([1, 3])
+    with col_tog:
+        st.session_state.auto_speak = st.toggle(
+            T("auto_speak"),
+            value=st.session_state.auto_speak,
+            help="Automatically read out each AI response using your browser's text-to-speech."
+        )
+
+    # ── Quick prompt chips (language-aware) ──
     QPROMPTS = {
         "en": ["What's my savings rate?","Suggest a SIP plan","Emergency fund status",
                "Am I overspending?","Predict next month","Food spending advice",
                "What's my risk level?","Best budget tip"],
-        "hi": ["मेरी बचत दर क्या है?","SIP सुझाव दें","आपातकालीन निधि","क्या मैं ज़्यादा खर्च कर रहा हूं?",
-               "अगले महीने का अंदाज","खाने पर खर्च","मेरा जोखिम स्तर","बजट टिप्स"],
-        "mr": ["माझी बचत दर काय आहे?","SIP सुचवा","आपत्कालीन निधी","मी जास्त खर्च करतो का?",
-               "पुढच्या महिन्याचा अंदाज","जेवणावर खर्च","माझी जोखीम पातळी","बजट टिप्स"],
+        "hi": ["मेरी बचत दर क्या है?","SIP सुझाव दें","आपातकालीन निधि",
+               "क्या मैं ज़्यादा खर्च कर रहा हूं?","अगले महीने का अनुमान",
+               "खाने पर खर्च","मेरा जोखिम स्तर","बजट टिप्स"],
+        "mr": ["माझी बचत दर काय आहे?","SIP सुचवा","आपत्कालीन निधी",
+               "मी जास्त खर्च करतो का?","पुढच्या महिन्याचा अंदाज",
+               "जेवणावर खर्च","माझी जोखीम पातळी","बजेट टिप्स"],
     }
     prompts = QPROMPTS.get(lang, QPROMPTS["en"])
 
@@ -1967,34 +2238,36 @@ def page_chat():
                 st.session_state.chat.append({"role":"user","text":q})
                 resp = chat_response(uid, q, lang)
                 st.session_state.chat.append({"role":"ai","text":resp})
+                st.session_state.last_spoken = resp   # mark for auto-speak
                 st.rerun()
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ── VOICE INPUT SECTION ──
-    with st.expander("🎙️ Voice Command (Chrome / Edge)", expanded=False):
+    # ── Voice input section ──
+    with st.expander("🎙️ Voice Input (Chrome / Edge)", expanded=False):
         st.markdown("""
         <div style="padding:10px 14px;background:#eff6ff;border:1px solid #bfdbfe;
                     border-radius:10px;margin-bottom:12px;font-size:12px;color:#1e3a8a;">
-            🌐 <b>Works in Chrome & Edge</b> — Uses your browser's built-in speech recognition.
-            No extra packages needed. Click the button and speak clearly.
+            🌐 <b>Works in Chrome &amp; Edge</b> — Click the button and speak in your chosen language.
+            Your speech will auto-fill the chat box. Then press <b>Send</b>.
         </div>
         """, unsafe_allow_html=True)
         render_voice_button(lang)
         st.markdown("""
         <div style="font-size:11px;color:#9ca3af;margin-top:6px;">
-            💡 Your voice input will auto-fill the chat box below. Then press Send.
+            💡 Voice input fills the chat box. The AI will then reply in your selected language
+            and read it out automatically if Auto-Speak is on.
         </div>
         """, unsafe_allow_html=True)
 
-    # ── CHAT HISTORY ──
+    # ── Chat history ──
     chat_container = st.container()
     with chat_container:
         if not st.session_state.chat:
             welcome = {
                 "en": "Hi! 👋 I'm FinZen AI — your personal financial advisor. Click a quick prompt above or type your question below!",
-                "hi": "नमस्ते! 👋 मैं FinZen AI हूं — आपका व्यक्तिगत वित्तीय सलाहकार। ऊपर कोई प्रश्न चुनें या नीचे टाइप करें!",
-                "mr": "नमस्कार! 👋 मी FinZen AI आहे — तुमचा वैयक्तिक आर्थिक सल्लागार. वरून प्रश्न निवडा किंवा खाली लिहा!",
+                "hi": "नमस्ते! 👋 मैं FinZen AI हूं — आपका वित्तीय सलाहकार। ऊपर कोई प्रश्न चुनें या नीचे टाइप करें!",
+                "mr": "नमस्कार! 👋 मी FinZen AI आहे — तुमचा आर्थिक सल्लागार. वरून प्रश्न निवडा किंवा खाली लिहा!",
             }
             st.markdown(f"""
             <div class="chat-ai">
@@ -2002,21 +2275,33 @@ def page_chat():
                 {welcome.get(lang, welcome['en'])}
             </div>""", unsafe_allow_html=True)
 
-        for msg in st.session_state.chat:
+        for idx, msg in enumerate(st.session_state.chat):
             if msg["role"] == "user":
                 st.markdown(f'<div class="chat-user">{msg["text"]}</div>', unsafe_allow_html=True)
             else:
-                clean = msg["text"].replace("\n","<br>")
-                tts_btn = render_tts_button(msg["text"], lang)
+                clean_html = msg["text"].replace("\n","<br>")
+                speak_btn  = render_manual_speak_button(msg["text"], lang, key_suffix=str(idx))
                 st.markdown(f"""
                 <div class="chat-ai">
-                    <div class="chat-ai-lbl">FINZEN AI {tts_btn}</div>
-                    {clean}
+                    <div class="chat-ai-lbl">FINZEN AI {speak_btn}</div>
+                    {clean_html}
                 </div>""", unsafe_allow_html=True)
 
+    # ── Auto-speak the latest AI response ──
+    # Fires when a new response arrives that hasn't been spoken yet
+    if (st.session_state.auto_speak
+            and st.session_state.chat
+            and st.session_state.chat[-1]["role"] == "ai"):
+        latest = st.session_state.chat[-1]["text"]
+        if latest != st.session_state.get("_last_auto_spoken", ""):
+            st.session_state["_last_auto_spoken"] = latest
+            render_auto_speak(latest, lang)
+
     st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── Text input + send ──
     inp_col, btn_col = st.columns([5,1])
-    ph = T("ask_placeholder")
+    ph         = T("ask_placeholder")
     user_input = inp_col.text_input("msg", placeholder=ph, label_visibility="collapsed", key="chat_msg")
     send       = btn_col.button(T("send"), use_container_width=True, type="primary")
 
@@ -2028,7 +2313,8 @@ def page_chat():
 
     if st.session_state.chat:
         if st.button(T("clear_chat"), type="secondary"):
-            st.session_state.chat = []
+            st.session_state.chat              = []
+            st.session_state["_last_auto_spoken"] = ""
             st.rerun()
 
 
@@ -2050,6 +2336,10 @@ def main():
     elif "Prediction" in page: page_predictions()
     elif "Goals"      in page: page_goals()
     elif "What-If"    in page: page_whatif()
+    elif "Advisor"    in page: page_chat()
+
+if __name__ == "__main__":
+    main()
     elif "Advisor"    in page: page_chat()
 
 if __name__ == "__main__":
